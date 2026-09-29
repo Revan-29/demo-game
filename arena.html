@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Warrior Arena - Co-Op Survival</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #ui { position: absolute; top: 10px; left: 10px; color: white; background: rgba(0,0,0,0.7); padding: 15px; border-radius: 8px; pointer-events: none; }
+        .bar { width: 200px; height: 10px; background: #333; margin-top: 5px; border-radius: 5px;}
+        .fill-hp { height: 100%; background: #e74c3c; width: 100%; border-radius: 5px; transition: width 0.2s;}
+        .fill-energy { height: 100%; background: #f1c40f; width: 100%; border-radius: 5px;}
+        #controls { position: absolute; bottom: 10px; left: 10px; color: #aaa; font-size: 12px; pointer-events: none; }
+        #game-over { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: red; font-size: 48px; font-weight: bold; font-family: sans-serif; pointer-events: none; text-shadow: 2px 2px 0 #000;}
+        #victory { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #2ecc71; font-size: 48px; font-weight: bold; font-family: sans-serif; pointer-events: none; text-shadow: 2px 2px 0 #000;}
+        
+        #choice-ui { display: none; position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%); color: white; text-align: center; font-family: sans-serif; pointer-events: auto; background: rgba(0,0,0,0.9); padding: 30px; border-radius: 12px; border: 1px solid #555; box-shadow: 0 10px 30px rgba(0,0,0,0.8); z-index: 100;}
+        .choice-btn { font-size: 20px; font-weight: bold; margin: 15px; color: #aaa; letter-spacing: 2px; cursor: pointer; padding: 10px 20px; border: 1px solid transparent; transition: 0.2s;}
+        .choice-btn:hover { background: rgba(255,255,255,0.1); border-radius: 8px; border: 1px solid #777;}
+        .spare-text { color: #2ecc71; text-shadow: 0 0 10px #2ecc71;}
+        .kill-text { color: #e74c3c; text-shadow: 0 0 10px #e74c3c;}
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.0/umd/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+    <div id="ui">
+        <h3>Player Stats</h3>
+        <div>Health: <span id="hp-text">100</span></div>
+        <div class="bar"><div id="hp-bar" class="fill-hp"></div></div>
+        <div style="margin-top:10px;">Energy: <span id="en-text">100</span></div>
+        <div class="bar"><div id="en-bar" class="fill-energy"></div></div>
+        <h3 style="margin-top:15px; color:#2ecc71;">Treasure: <span id="tr-text">0</span></h3>
+    </div>
+    <div id="controls">WASD to Move | SPACE to Attack | LEFT CLICK to Look</div>
+    <div id="game-over">YOU DIED</div>
+    <div id="victory">SURVIVED TOGETHER</div>
+    
+    <div id="choice-ui">
+        <h2 style="margin: 0 0 20px 0; color: #fff; letter-spacing: 3px;">ENEMY DEFEATED</h2>
+        <div class="choice-btn" id="btn-kill"><span class="kill-text">[SPACE]</span> EXECUTE</div>
+        <div class="choice-btn" id="btn-spare"><span class="spare-text">[F]</span> SHOW MERCY</div>
+    </div>
+
+    <script>
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x5c1a06); 
+        scene.fog = new THREE.FogExp2(0x5c1a06, 0.025); 
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 8, 12); 
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true; 
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 4;
+        controls.maxDistance = 20;
+        controls.maxPolarAngle = Math.PI / 2 - 0.1; 
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x403020, 0.8);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xff8c42, 1.2);
+        directionalLight.position.set(15, 25, 10);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+
+        const fireLight = new THREE.PointLight(0xffaa00, 2, 15);
+        fireLight.position.set(0, 1.5, 0);
+        fireLight.castShadow = true;
+        scene.add(fireLight);
+
+        const firePitGeo = new THREE.CylinderGeometry(1.2, 1.5, 0.3, 8);
+        const firePitMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 1 });
+        const firePit = new THREE.Mesh(firePitGeo, firePitMat);
+        firePit.position.set(0, 0.15, 0);
+        scene.add(firePit);
+
+        const groundGeo = new THREE.PlaneGeometry(150, 150);
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x1f1c18, roughness: 0.9 });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Environment Ruins
+        const obstacles = [];
+        const pillarMat = new THREE.MeshStandardMaterial({ color: 0x3d3d3d, roughness: 0.9 });
+        const pillarLayout = [
+            {x: 6, z: 6}, {x: -6, z: -6}, {x: 8, z: -4}, {x: -7, z: 5}, 
+            {x: -3, z: 12}, {x: 10, z: 2}, {x: -12, z: -2}, {x: 4, z: 14},
+            {x: -10, z: -10}, {x: 12, z: -12}
+        ];
+
+        pillarLayout.forEach(pos => {
+            const height = 2 + Math.random() * 6;
+            const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.2, height, 7), pillarMat);
+            pillar.position.set(pos.x, height / 2, pos.z);
+            pillar.rotation.y = Math.random() * Math.PI;
+            pillar.rotation.z = (Math.random() - 0.5) * 0.15;
+            pillar.rotation.x = (Math.random() - 0.5) * 0.15;
+            pillar.castShadow = true;
+            pillar.receiveShadow = true;
+            scene.add(pillar);
+            obstacles.push({ x: pos.x, z: pos.z, radius: 1.5 });
+        });
+        obstacles.push({ x: 0, z: 0, radius: 2.0 });
+
+        function checkCollision(targetX, targetZ) {
+            for (let obs of obstacles) {
+                const dx = targetX - obs.x;
+                const dz = targetZ - obs.z;
+                if (Math.sqrt(dx * dx + dz * dz) < obs.radius + 0.5) return true;
+            }
+            return false;
+        }
+
+        const loader = new THREE.FBXLoader();
+        const clock = new THREE.Clock();
+        
+        // --- PLAYER ---
+        let player, playerMixer;
+        let previousPlayerPosition = new THREE.Vector3();
+        const playerActions = {};
+        let playerActiveAction;
+        let isMoving = false;
+        let isAttacking = false;
+
+        function fadePlayerAction(name, duration) {
+            const prevAction = playerActiveAction;
+            playerActiveAction = playerActions[name];
+            if (prevAction && prevAction !== playerActiveAction) prevAction.fadeOut(duration);
+            if (playerActiveAction) playerActiveAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(duration).play();
+        }
+
+        loader.load('public/Fighter.fbx', function (fbx) {
+            player = fbx;
+            player.scale.set(0.02, 0.02, 0.02);
+            player.position.set(0, 0, 5);
+            player.traverse((node) => { if (node.isMesh) { node.castShadow = true; node.receiveShadow = true; } });
+            scene.add(player);
+            previousPlayerPosition.copy(player.position);
+            playerMixer = new THREE.AnimationMixer(player);
+            
+            loader.load('public/Idle.fbx', (anim) => { playerActions['idle'] = playerMixer.clipAction(anim.animations[0]); playerActiveAction = playerActions['idle']; playerActiveAction.play(); });
+            loader.load('public/Run.fbx', (anim) => playerActions['run'] = playerMixer.clipAction(anim.animations[0]));
+            loader.load('public/Attack.fbx', (anim) => {
+                const atk = playerMixer.clipAction(anim.animations[0]); atk.setLoop(THREE.LoopOnce); atk.clampWhenFinished = true; playerActions['attack'] = atk;
+                playerMixer.addEventListener('finished', (e) => { if (e.action === playerActions['attack']) { isAttacking = false; fadePlayerAction(isMoving ? 'run' : 'idle', 0.2); } });
+            });
+        });
+
+        // --- ENEMY/ALLY ---
+        let enemy, enemyMixer;
+        const enemyActions = {};
+        let enemyActiveAction;
+        let enemyIsAttacking = false;
+        let enemyAlive = true;
+        let enemyDefeated = false;
+        let enemySpared = false;
+
+        function fadeEnemyAction(name, duration) {
+            const prevAction = enemyActiveAction;
+            enemyActiveAction = enemyActions[name];
+            if (prevAction && prevAction !== enemyActiveAction) prevAction.fadeOut(duration);
+            if (enemyActiveAction) enemyActiveAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(duration).play();
+        }
+
+        loader.load('public/Fighter.fbx', function (fbx) {
+            enemy = fbx;
+            enemy.scale.set(0.02, 0.02, 0.02);
+            enemy.position.set(10, 0, -15);
+            enemy.traverse((node) => { if (node.isMesh && node.material) { node.material = node.material.clone(); node.material.color.setHex(0xd63031); node.castShadow = true; node.receiveShadow = true; } });
+            scene.add(enemy);
+            enemyMixer = new THREE.AnimationMixer(enemy);
+            
+            loader.load('public/Idle.fbx', (anim) => { enemyActions['idle'] = enemyMixer.clipAction(anim.animations[0]); enemyActiveAction = enemyActions['idle']; enemyActiveAction.play(); });
+            loader.load('public/Run.fbx', (anim) => enemyActions['run'] = enemyMixer.clipAction(anim.animations[0]));
+            loader.load('public/Attack.fbx', (anim) => {
+                const atk = enemyMixer.clipAction(anim.animations[0]); atk.setLoop(THREE.LoopOnce); atk.clampWhenFinished = true; enemyActions['attack'] = atk;
+                enemyMixer.addEventListener('finished', (e) => { if (e.action === enemyActions['attack']) { enemyIsAttacking = false; fadeEnemyAction(enemySpared ? 'run' : 'idle', 0.2); } });
+            });
+        });
+
+        // --- ZOMBIE BOSS ---
+        let zombie, zombieMixer;
+        const zombieActions = {};
+        let zombieActiveAction;
+        let zombieIsAttacking = false;
+        let zombieAlive = false; 
+        let zombieHp = 150;
+
+        function fadeZombieAction(name, duration) {
+            const prevAction = zombieActiveAction;
+            zombieActiveAction = zombieActions[name];
+            if (prevAction && prevAction !== zombieActiveAction) prevAction.fadeOut(duration);
+            if (zombieActiveAction) zombieActiveAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(duration).play();
+        }
+
+        // PERFECTLY MATCHED FILE NAMES (Only Z is uppercase)
+        loader.load('public/Zombie.fbx', function (fbx) {
+            zombie = fbx;
+            zombie.scale.set(0.02, 0.02, 0.02);
+            zombie.position.set(-20, -10, -20); 
+            zombie.traverse((node) => { if (node.isMesh) { node.castShadow = true; node.receiveShadow = true; } });
+            scene.add(zombie);
+            zombieMixer = new THREE.AnimationMixer(zombie);
+            
+            loader.load('public/Zombierun.fbx', (anim) => {
+                zombieActions['run'] = zombieMixer.clipAction(anim.animations[0]);
+                zombieActiveAction = zombieActions['run'];
+            });
+            loader.load('public/Zombieattack.fbx', (anim) => {
+                const atk = zombieMixer.clipAction(anim.animations[0]); atk.setLoop(THREE.LoopOnce); atk.clampWhenFinished = true; zombieActions['attack'] = atk;
+                zombieMixer.addEventListener('finished', (e) => { if (e.action === zombieActions['attack']) { zombieIsAttacking = false; fadeZombieAction('run', 0.2); } });
+            });
+        });
+
+        // --- GAME STATE ---
+        let stats = { hp: 100, energy: 100, treasure: 0 };
+        let playerAlive = true;
+        
+        function triggerMercy() {
+            if(!enemyDefeated || enemySpared || !enemyAlive) return;
+            enemySpared = true;
+            document.getElementById('choice-ui').style.display = 'none';
+            
+            scene.background.setHex(0x131a22);
+            scene.fog.color.setHex(0x131a22);
+            directionalLight.color.setHex(0x8cb6d9);
+            directionalLight.intensity = 0.8;
+            fireLight.color.setHex(0x4488ff); 
+
+            setTimeout(() => {
+                if (zombie) {
+                    zombie.position.set(-15, 0, -15); 
+                    zombieAlive = true;
+                    fadeZombieAction('run', 0.2);
+                    fireLight.color.setHex(0x1abc9c); 
+                }
+            }, 3000);
+        }
+
+        function triggerExecute() {
+            if(!enemyDefeated || enemySpared || !enemyAlive) return;
+            enemyAlive = false;
+            enemy.rotation.z = Math.PI / 2; 
+            enemy.position.y = 1;
+            if (enemyMixer) enemyMixer.stopAllAction();
+            document.getElementById('choice-ui').style.display = 'none';
+            stats.treasure += 500;
+        }
+
+        document.getElementById('btn-spare').addEventListener('click', triggerMercy);
+        document.getElementById('btn-kill').addEventListener('click', triggerExecute);
+
+        const keys = {};
+        document.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            
+            if (enemyDefeated && !enemySpared && enemyAlive) {
+                if (e.code === 'KeyF' || e.key.toLowerCase() === 'f') triggerMercy();
+                else if (e.code === 'Space') triggerExecute();
+                return; 
+            }
+
+            if (e.code === 'Space' && !isAttacking && playerActions['attack'] && stats.energy >= 10 && playerAlive) {
+                isAttacking = true;
+                fadePlayerAction('attack', 0.1);
+                stats.energy -= 10;
+                
+                if (enemyAlive && !enemyDefeated && player.position.distanceTo(enemy.position) < 5) {
+                    enemyDefeated = true;
+                    if (enemyMixer) enemyMixer.stopAllAction();
+                    fadeEnemyAction('idle', 0.1); 
+                    document.getElementById('choice-ui').style.display = 'block';
+                }
+
+                if (zombieAlive && player.position.distanceTo(zombie.position) < 6) {
+                    zombieHp -= 35;
+                    if (zombieHp <= 0) {
+                        zombieAlive = false;
+                        zombie.rotation.z = Math.PI / 2;
+                        zombie.position.y = 1;
+                        if (zombieMixer) zombieMixer.stopAllAction();
+                        document.getElementById('victory').style.display = 'block'; 
+                        fireLight.color.setHex(0xffaa00); 
+                    }
+                }
+            }
+        });
+        document.addEventListener('keyup', (e) => keys[e.code] = false);
+
+        const playerSpeed = 0.2;
+        const enemySpeed = 0.14; 
+        const zombieSpeed = 0.12;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            
+            fireLight.intensity = 1.8 + Math.random() * 0.4;
+
+            if (playerMixer) playerMixer.update(delta);
+            if (enemyMixer && enemyAlive) enemyMixer.update(delta);
+            if (zombieMixer && zombieAlive) zombieMixer.update(delta);
+
+            if (player && playerAlive) {
+                const isWaitingForChoice = enemyDefeated && enemyAlive && !enemySpared;
+                const wasMoving = isMoving;
+                isMoving = (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD']) && !isAttacking && !isWaitingForChoice;
+
+                if (!isAttacking && !isWaitingForChoice) {
+                    if (isMoving && !wasMoving && playerActions['run']) fadePlayerAction('run', 0.2);
+                    else if (!isMoving && wasMoving && playerActions['idle']) fadePlayerAction('idle', 0.2);
+                }
+
+                let moveX = 0; let moveZ = 0;
+                if (keys['KeyW']) moveZ -= 1;
+                if (keys['KeyS']) moveZ += 1;
+                if (keys['KeyA']) moveX += 1; 
+                if (keys['KeyD']) moveX -= 1; 
+
+                if ((moveX !== 0 || moveZ !== 0) && !isAttacking && !isWaitingForChoice) {
+                    const length = Math.sqrt(moveX * moveX + moveZ * moveZ);
+                    moveX /= length; moveZ /= length;
+                    const cameraDirection = new THREE.Vector3();
+                    camera.getWorldDirection(cameraDirection);
+                    cameraDirection.y = 0; cameraDirection.normalize();
+                    const cameraRight = new THREE.Vector3();
+                    cameraRight.crossVectors(camera.up, cameraDirection).normalize();
+                    const moveDirection = new THREE.Vector3();
+                    moveDirection.addScaledVector(cameraRight, moveX);
+                    moveDirection.addScaledVector(cameraDirection, -moveZ);
+                    moveDirection.normalize();
+
+                    const targetAngle = Math.atan2(moveDirection.x, moveDirection.z);
+                    const targetRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetAngle);
+                    player.quaternion.slerp(targetRotation, 0.08); 
+
+                    const nextX = player.position.x + moveDirection.x * playerSpeed;
+                    const nextZ = player.position.z + moveDirection.z * playerSpeed;
+                    if (!checkCollision(nextX, player.position.z)) player.position.x = nextX;
+                    if (!checkCollision(player.position.x, nextZ)) player.position.z = nextZ;
+                }
+
+                const deltaX = player.position.x - previousPlayerPosition.x;
+                const deltaZ = player.position.z - previousPlayerPosition.z;
+                camera.position.x += deltaX;
+                camera.position.z += deltaZ;
+                controls.target.set(player.position.x, player.position.y + 3, player.position.z);
+                controls.update(); 
+                previousPlayerPosition.copy(player.position);
+            }
+
+            if (enemy && enemyAlive && player && playerAlive) {
+                if (enemyDefeated && !enemySpared) {
+                    enemy.lookAt(player.position);
+                } 
+                else if (enemySpared) {
+                    let target = zombieAlive ? zombie : player;
+                    enemy.lookAt(target.position);
+                    
+                    const distToTarget = enemy.position.distanceTo(target.position);
+                    
+                    if (zombieAlive) {
+                        if (distToTarget > 4 && !enemyIsAttacking) {
+                            if (enemyActiveAction !== enemyActions['run'] && enemyActions['run']) fadeEnemyAction('run', 0.2);
+                            const chaseDir = new THREE.Vector3().subVectors(zombie.position, enemy.position).normalize();
+                            const nextEX = enemy.position.x + chaseDir.x * enemySpeed;
+                            const nextEZ = enemy.position.z + chaseDir.z * enemySpeed;
+                            if (!checkCollision(nextEX, enemy.position.z)) enemy.position.x = nextEX;
+                            if (!checkCollision(enemy.position.x, nextEZ)) enemy.position.z = nextEZ;
+                        } else if (distToTarget <= 4 && !enemyIsAttacking && enemyActions['attack']) {
+                            enemyIsAttacking = true;
+                            fadeEnemyAction('attack', 0.1);
+                            setTimeout(() => { if (zombieAlive && enemy.position.distanceTo(zombie.position) < 5) zombieHp -= 10; }, 500);
+                        }
+                    } else {
+                        if (distToTarget > 5) {
+                            if (enemyActiveAction !== enemyActions['run'] && enemyActions['run']) fadeEnemyAction('run', 0.2);
+                            const chaseDir = new THREE.Vector3().subVectors(player.position, enemy.position).normalize();
+                            const nextEX = enemy.position.x + chaseDir.x * enemySpeed;
+                            const nextEZ = enemy.position.z + chaseDir.z * enemySpeed;
+                            if (!checkCollision(nextEX, enemy.position.z)) enemy.position.x = nextEX;
+                            if (!checkCollision(enemy.position.x, nextEZ)) enemy.position.z = nextEZ;
+                        } else {
+                            if (enemyActiveAction !== enemyActions['idle'] && enemyActions['idle']) fadeEnemyAction('idle', 0.2);
+                        }
+                    }
+                } 
+                else {
+                    enemy.lookAt(player.position);
+                    if (enemy.position.distanceTo(player.position) > 4 && !enemyIsAttacking) {
+                        if (enemyActiveAction !== enemyActions['run'] && enemyActions['run']) fadeEnemyAction('run', 0.2);
+                        const chaseDir = new THREE.Vector3().subVectors(player.position, enemy.position).normalize();
+                        const nextEX = enemy.position.x + chaseDir.x * enemySpeed;
+                        const nextEZ = enemy.position.z + chaseDir.z * enemySpeed;
+                        if (!checkCollision(nextEX, enemy.position.z)) enemy.position.x = nextEX;
+                        if (!checkCollision(enemy.position.x, nextEZ)) enemy.position.z = nextEZ;
+                    } else if (enemy.position.distanceTo(player.position) <= 4 && !enemyIsAttacking && enemyActions['attack']) {
+                        enemyIsAttacking = true;
+                        fadeEnemyAction('attack', 0.1);
+                        setTimeout(() => {
+                            if (enemyAlive && !enemyDefeated && playerAlive && enemy.position.distanceTo(player.position) < 5) {
+                                stats.hp = Math.max(0, stats.hp - 20);
+                                if (stats.hp <= 0) {
+                                    playerAlive = false; player.rotation.z = -Math.PI / 2; player.position.y = 1;
+                                    if (playerMixer) playerMixer.stopAllAction();
+                                    document.getElementById('game-over').style.display = 'block';
+                                }
+                            }
+                        }, 500); 
+                    }
+                }
+            }
+
+            if (zombie && zombieAlive && playerAlive) {
+                zombie.lookAt(player.position);
+                const distToPlayer = zombie.position.distanceTo(player.position);
+
+                if (distToPlayer > 4 && !zombieIsAttacking) {
+                    const chaseDir = new THREE.Vector3().subVectors(player.position, zombie.position).normalize();
+                    const nextZX = zombie.position.x + chaseDir.x * zombieSpeed;
+                    const nextZZ = zombie.position.z + chaseDir.z * zombieSpeed;
+                    if (!checkCollision(nextZX, zombie.position.z)) zombie.position.x = nextZX;
+                    if (!checkCollision(zombie.position.x, nextZZ)) zombie.position.z = nextZZ;
+                } else if (distToPlayer <= 4 && !zombieIsAttacking && zombieActions['attack']) {
+                    zombieIsAttacking = true;
+                    fadeZombieAction('attack', 0.1);
+                    setTimeout(() => {
+                        if (zombieAlive && playerAlive && zombie.position.distanceTo(player.position) < 6) {
+                            stats.hp = Math.max(0, stats.hp - 25);
+                            if (stats.hp <= 0) {
+                                playerAlive = false; player.rotation.z = -Math.PI / 2; player.position.y = 1;
+                                if (playerMixer) playerMixer.stopAllAction();
+                                document.getElementById('game-over').style.display = 'block';
+                            }
+                        }
+                    }, 500);
+                }
+            }
+
+            if(stats.energy > 0) stats.energy -= 0.05;
+            document.getElementById('hp-text').innerText = Math.floor(stats.hp);
+            document.getElementById('hp-bar').style.width = stats.hp + '%';
+            document.getElementById('en-text').innerText = Math.floor(stats.energy);
+            document.getElementById('en-bar').style.width = stats.energy + '%';
+            document.getElementById('tr-text').innerText = stats.treasure;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

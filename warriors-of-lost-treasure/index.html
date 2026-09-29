@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#080706" />
+  <title>Warriors of the Lost Treasure</title>
+</head>
+<body>
+  <div id="app">
+    <div id="login-screen" class="screen">
+      <div class="login-card">
+        <div class="eyebrow">ANCIENT SURVIVAL ARENA</div>
+        <h1>WARRIORS<br><span>OF THE LOST TREASURE</span></h1>
+        <p>Two warriors. Two treasures. One battlefield. Hunt your rival, survive, and return with the enemy treasure.</p>
+        <div class="name-row">
+          <input id="player-name" maxlength="16" placeholder="Enter warrior name" value="Warrior" />
+          <button id="start-btn">ENTER BATTLE</button>
+        </div>
+        <div class="controls-mini">
+          <span>WASD</span> Move
+          <span>SHIFT</span> Sprint
+          <span>SPACE</span> Attack
+          <span>F</span> Steal
+          <span>R</span> Restart
+        </div>
+      </div>
+    </div>
+
+    <div id="hud" class="hidden">
+      <div class="topbar">
+        <div class="brand">WARRIORS <small>OF THE LOST TREASURE</small></div>
+        <div class="objective">STEAL THE ENEMY CHEST <b id="objective-count">0 / 100</b></div>
+      </div>
+
+      <div class="player-panel panel">
+        <div class="panel-title"><span id="player-label">WARRIOR</span><span id="player-score">0 GOLD</span></div>
+        <div class="bar"><i id="health-bar"></i></div>
+        <div class="bar stamina"><i id="stamina-bar"></i></div>
+        <div class="status-line"><span>HP <b id="health-text">100</b></span><span>ENERGY <b id="stamina-text">100</b></span></div>
+      </div>
+
+      <div class="enemy-panel panel">
+        <div class="panel-title"><span>RIVAL WARRIOR</span><span id="enemy-gold">100 GOLD</span></div>
+        <div class="bar"><i id="enemy-health-bar"></i></div>
+        <div class="status-line"><span>HP <b id="enemy-health-text">100</b></span><span id="enemy-state">GUARDING</span></div>
+      </div>
+
+      <div id="toast">Find the enemy treasure.</div>
+      <div id="crosshair">+</div>
+      <div class="bottom-help">WASD Move · SHIFT Sprint · SPACE Attack · F Steal · R Restart</div>
+    </div>
+
+    <div id="result-screen" class="screen hidden">
+      <div class="result-card">
+        <div id="result-icon">🏆</div>
+        <div id="result-kicker">BATTLE COMPLETE</div>
+        <h2 id="result-title">VICTORY</h2>
+        <p id="result-copy"></p>
+        <button id="restart-btn">PLAY AGAIN</button>
+      </div>
+    </div>
+
+    <div id="loading">Loading battlefield…</div>
+    <div id="flash"></div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
